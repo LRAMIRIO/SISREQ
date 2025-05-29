@@ -1,10 +1,10 @@
 
 import streamlit as st
-from pdf2image import convert_from_path
+import pdfplumber
 import pytesseract
+from PIL import Image
 import pandas as pd
 import re
-from PIL import Image
 from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
@@ -18,22 +18,23 @@ st.markdown("**Transforme arquivos PDF com itens de requisições em planilhas E
 pdf_file = st.file_uploader("Envie o arquivo PDF", type=["pdf"])
 
 if pdf_file:
-    with open("temp.pdf", "wb") as f:
-        f.write(pdf_file.read())
+    with pdfplumber.open(BytesIO(pdf_file.read())) as pdf:
+        texto_completo = ""
+        for page in pdf.pages:
+            image = page.to_image(resolution=300)
+            ocr_text = pytesseract.image_to_string(image.original, lang="por")
+            texto_completo += ocr_text + "\n"
 
-    pages = convert_from_path("temp.pdf", dpi=300)
-
+    # Separar por blocos
     blocos = []
     bloco = ""
-    for page in pages:
-        texto = pytesseract.image_to_string(page, lang='por')
-        for linha in texto.split('\n'):
-            linha = linha.strip()
-            if linha:
-                bloco += linha + "\n"
-                if "Valor total" in linha:
-                    blocos.append(bloco)
-                    bloco = ""
+    for linha in texto_completo.split('\n'):
+        linha = linha.strip()
+        if linha:
+            bloco += linha + "\n"
+            if "Valor total" in linha:
+                blocos.append(bloco)
+                bloco = ""
 
     def ajustar_texto(texto):
         texto = texto.strip().strip('"').strip("'")
@@ -107,7 +108,6 @@ if pdf_file:
     wb = Workbook()
     ws = wb.active
     ws.title = "ITENS"
-
     for i, row in enumerate(dataframe_to_rows(df_final, index=False, header=True)):
         ws.append(row)
 
@@ -126,5 +126,5 @@ if pdf_file:
     from tempfile import NamedTemporaryFile
     with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
         wb.save(tmp.name)
-        st.success("Planilha gerada com sucesso!")
+        st.success("✅ Planilha gerada com sucesso!")
         st.download_button("📥 Baixar Excel", data=open(tmp.name, "rb").read(), file_name="itens_extraidos.xlsx")
